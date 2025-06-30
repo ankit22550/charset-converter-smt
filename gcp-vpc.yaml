@@ -1,0 +1,11 @@
+apiVersion: network.gcp.crossplane.io/v1beta1
+kind: Network
+metadata:
+  name: ankit-test
+  namespace: crossplane-system
+spec:
+  forProvider:
+    autoCreateSubnetworks: false
+    description: "Managed by Crossplane"
+  providerConfigRef:
+    name: default

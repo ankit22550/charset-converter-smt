@@ -1,0 +1,15 @@
+apiVersion: container.gcp.crossplane.io/v1beta1
+kind: ContainerCluster
+metadata:
+  name: my-gke-cluster
+  namespace: crossplane-system
+spec:
+  forProvider:
+    location: us-central1-a
+    initialNodeCount: 3
+    nodeConfig:
+      machineType: e2-medium
+    networkRef:
+      name: ankit-test
+  providerConfigRef:
+    name: default
