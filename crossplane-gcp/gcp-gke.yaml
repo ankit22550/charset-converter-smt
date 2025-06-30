@@ -5,7 +5,7 @@ metadata:
   namespace: crossplane-system
 spec:
   forProvider:
-    location: us-central1-a  # or use 'us-central1' for region
+    location: europe-west9  # or use 'us-central1' for region
     initialNodeCount: 3
     nodeConfig:
       machineType: e2-medium
