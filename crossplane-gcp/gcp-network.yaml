@@ -1,11 +1,13 @@
 apiVersion: compute.gcp.crossplane.io/v1beta1
-kind: Network
+kind: Subnetwork
 metadata:
   name: ankit-test
   namespace: crossplane-system
 spec:
   forProvider:
-    description: "My GCP VPC network"
-    autoCreateSubnetworks: false  # Set to false for custom subnet
+    region: us-central1
+    networkRef:
+      name: ankit-test
+    ipCidrRange: 10.0.0.0/24
   providerConfigRef:
     name: gcp-provider

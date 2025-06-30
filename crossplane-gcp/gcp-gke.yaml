@@ -5,11 +5,11 @@ metadata:
   namespace: crossplane-system
 spec:
   forProvider:
-    location: us-central1-a
+    location: us-central1-a  # or use 'us-central1' for region
     initialNodeCount: 3
     nodeConfig:
       machineType: e2-medium
     networkRef:
-      name: ankit-test
+      name: ankit-test  # Ensure this Network resource exists
   providerConfigRef:
     name: default
