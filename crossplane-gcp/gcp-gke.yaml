@@ -1,5 +1,5 @@
-apiVersion: container.gcp.crossplane.io/v1beta1
-kind: ContainerCluster
+apiVersion: gcp.crossplane.io/v1beta1
+kind: Cluster
 metadata:
   name: my-gke-cluster
   namespace: crossplane-system
