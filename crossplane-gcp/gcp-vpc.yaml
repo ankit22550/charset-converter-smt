@@ -1,4 +1,4 @@
-apiVersion: network.gcp.crossplane.io/v1beta1
+apiVersion: gcp.crossplane.io/v1beta1
 kind: Network
 metadata:
   name: ankit-test
