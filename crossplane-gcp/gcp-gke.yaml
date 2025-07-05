@@ -1,15 +1,185 @@
 apiVersion: container.gcp.crossplane.io/v1beta2
 kind: Cluster
 metadata:
-  name: my-gke-cluster
-  namespace: crossplane-system
+  name: luca-gke-cluster
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    initialClusterVersion: "1.29"
+    location: europe-west9
+    # Internal Network (VPC and Subnet for nodes)
+    networkRef:
+      name: luca-vpc # References your main VPC Network
+    subnetworkRef:
+      name: luca-subnet # References the Subnet for GKE nodes (primary IP range)
+    ipAllocationPolicy:
+      useIPAliases: true # Enable VPC-native mode (IP aliasing)
+      clusterIpv4CidrBlock: "gke-pods-range" # Name of the secondary range for Pods
+      servicesIpv4CidrBlock: "gke-services-range" # Name of the secondary range for Services
+      # If you were to manually specify CIDRs instead of range names:
+      # clusterIpv4CidrBlock: 10.10.0.0/16
+      # servicesIpv4CidrBlock: 10.20.0.0/20
+    
+    # Enable private endpoint for internal network access to the control plane
+    # and private nodes. This is highly recommended for security.
+    privateClusterConfig:
+      enablePrivateEndpoint: true # Allows access to control plane from within VPC
+      enablePrivateNodes: true    # Nodes will only have internal IP addresses
+      masterIpv4CidrBlock: 172.16.0.0/28 # Dedicated CIDR for control plane (choose carefully)
+  providerConfigRef:
+    name: gcp-provider
+---
+apiVersion: container.gcp.crossplane.io/v1beta1
+kind: NodePool
+metadata:
+  name: my-gke-cluster-nodepool
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    clusterRef:
+      name: my-gke-cluster
+    
+    # Node configuration for the NodePool
+    config:
+      machineType: e2-medium
+      diskSizeGb: 100 # Example: 100 GB per node's boot disk
+      diskType: pd-standard # Example: Standard Persistent Disk for boot disk
+      serviceAccountRef:
+        name: gke-node-service-account # Reference to a Crossplane IAMServiceAccount
+      
+      # OAuth scopes define what GCP APIs the nodes can access.
+      # "https://www.googleapis.com/auth/compute" is essential for Persistent Disks.
+      oauthScopes:
+        - "https://www.googleapis.com/auth/devstorage.read_write"
+        - "https://www.googleapis.com/auth/logging.write"
+        - "https://www.googleapis.com/auth/monitoring"
+        - "https://www.googleapis.com/auth/servicecontrol"
+        - "https://www.googleapis.com/auth/service.management.readonly"
+        - "https://www.googleapis.com/auth/trace.append"
+        - "https://www.googleapis.com/auth/compute" # Essential for Persistent Disks
+          
+    initialNodeCount: 1
+    autoscaling:
+      enabled: true
+      minNodeCount: 1
+      maxNodeCount: 3
+  providerConfigRef:
+    name: gcp-provider
+
+---
+# Define a GCP Service Account for your GKE nodes (recommended for security)
+# This ServiceAccount will be referenced by the NodePool.
+apiVersion: iam.gcp.crossplane.io/v1beta1
+kind: ServiceAccount
+metadata:
+  name: gke-node-service-account
 spec:
   forProvider:
-    location: europe-west9  # or use 'us-central1' for region
-    initialNodeCount: 3
-    nodeConfig:
-      machineType: e2-medium
-    networkRef:
-      name: ankit-test  # Ensure this Network resource exists
+    projectID: ino-luca-tst # Ensure this matches your project ID
   providerConfigRef:
-    name: default
+    name: gcp-provider
+---
+# Define IAMPolicyMember to grant necessary roles to the GKE node service account.
+# These roles are crucial for your node's operations, including storage access.
+apiVersion: iam.gcp.crossplane.io/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: gke-node-service-account-viewer-member
+spec:
+  forProvider:
+    member: serviceAccount:gke-node-service-account@ino-luca-tst.iam.gserviceaccount.com
+    role: roles/viewer # Example: Grant viewer access. Add more specific roles as needed.
+  resourceRef:
+    apiVersion: iam.gcp.crossplane.io/v1beta1
+    kind: ServiceAccount
+    name: gke-node-service-account
+  providerConfigRef:
+    name: gcp-provider
+---
+apiVersion: iam.gcp.crossplane.io/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: gke-node-service-account-logging-member
+spec:
+  forProvider:
+    member: serviceAccount:gke-node-service-account@ino-luca-tst.iam.gserviceaccount.com
+    role: roles/logging.logWriter # For writing logs
+  resourceRef:
+    apiVersion: iam.gcp.crossplane.io/v1beta1
+    kind: ServiceAccount
+    name: gke-node-service-account
+  providerConfigRef:
+    name: gcp-provider
+---
+apiVersion: iam.gcp.crossplane.io/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: gke-node-service-account-monitoring-member
+spec:
+  forProvider:
+    member: serviceAccount:gke-node-service-account@ino-luca-tst.iam.gserviceaccount.com
+    role: roles/monitoring.metricWriter # For writing metrics
+  resourceRef:
+    apiVersion: iam.gcp.crossplane.io/v1beta1
+    kind: ServiceAccount
+    name: gke-node-service-account
+  providerConfigRef:
+    name: gcp-provider
+---
+apiVersion: iam.gcp.crossplane.io/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: gke-node-service-account-pd-member
+spec:
+  forProvider:
+    member: serviceAccount:gke-node-service-account@ino-luca-tst.iam.gserviceaccount.com
+    role: roles/compute.storage.user # Allows attaching and detaching persistent disks
+  resourceRef:
+    apiVersion: iam.gcp.crossplane.io/v1beta1
+    kind: ServiceAccount
+    name: gke-node-service-account
+  providerConfigRef:
+    name: gcp-provider
+---
+# Example of provisioning a GCP Persistent Disk using Crossplane.
+# This disk can then be attached to a Pod via a PersistentVolumeClaim and PersistentVolume.
+apiVersion: compute.gcp.crossplane.io/v1beta1
+kind: Disk
+metadata:
+  name: luca-data-disk
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    sizeGb: 50 # Size of the persistent disk in GB
+    type: pd-standard # Type of disk (e.g., pd-standard, pd-ssd, pd-balanced)
+    zone: europe-west9-a # Zone where the disk will be created (must match your node's zone)
+  providerConfigRef:
+    name: gcp-provider
+
+---
+# Example: Kubernetes StorageClass for dynamic provisioning of disks.
+# Apply this directly to your GKE cluster *after* it's created.
+# Crossplane does not directly manage StorageClass.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: standard-disk # Name you'll use in your PVCs
+provisioner: kubernetes.io/gce-pd # This is the built-in GKE provisioner for Persistent Disks
+parameters:
+  type: pd-standard # Matches the Disk type if you want to use the same kind
+  fstype: ext4
+volumeBindingMode: Immediate # Or WaitForFirstConsumer for topology-aware binding
+allowVolumeExpansion: true # Allows resizing the disk later
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: luca-app-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce # Can be mounted as read-write by a single node
+  resources:
+    requests:
+      storage: 40Gi # Request 40 GB of storage
+  storageClassName: standard-disk # References the StorageClass defined above

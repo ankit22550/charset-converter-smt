@@ -1,11 +1,46 @@
 apiVersion: compute.gcp.crossplane.io/v1beta1
 kind: Network
 metadata:
-  name: ankit-test
+  name: luca-vpc # Your main VPC Network
+  namespace: crossplane-system # Resource will be managed in this namespace
+spec:
+  forProvider:
+    description: "luca-vpc GCP VPC network for applications"
+    autoCreateSubnetworks: false # Crucial: Set to false to manually define subnets
+  providerConfigRef:
+    name: gcp-provider
+---
+apiVersion: compute.gcp.crossplane.io/v1beta1
+kind: Subnetwork
+metadata:
+  name: luca-subnet # First internal network (for GKE nodes)
   namespace: crossplane-system
 spec:
   forProvider:
-    description: "My GCP VPC network"
-    autoCreateSubnetworks: false  # Set to false for custom subnet
+    region: europe-west9 # Ensure this matches your GKE cluster's region
+    networkRef:
+      name: luca-vpc # References the VPC defined above
+    ipCidrRange: 10.0.0.0/24 # IP range for this subnet
+    description: "Subnet for GKE Cluster nodes"
+  providerConfigRef:
+    name: gcp-provider
+---
+apiVersion: compute.gcp.crossplane.io/v1beta1
+kind: Subnetwork
+metadata:
+  name: luca-db-subnet # Second internal network (e.g., for databases, internal services)
+  namespace: crossplane-system
+spec:
+  forProvider:
+    region: europe-west9 # Must be in the same region as the network
+    networkRef:
+      name: luca-vpc # References the same VPC
+    ipCidrRange: 10.0.1.0/24 # A different, non-overlapping IP range
+    description: "Subnet for internal database services or other private resources"
+    secondaryIpRanges:
+       - rangeName: "gke-pods"
+         ipCidrRange: 10.10.0.0/16
+       - rangeName: "gke-services"
+         ipCidrRange: 10.20.0.0/20
   providerConfigRef:
     name: gcp-provider

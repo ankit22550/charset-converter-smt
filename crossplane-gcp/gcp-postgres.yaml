@@ -1,0 +1,98 @@
+# Crossplane resources for a GCP Cloud SQL PostgreSQL instance
+apiVersion: compute.gcp.crossplane.io/v1beta1
+kind: Address
+metadata:
+  name: google-managed-services-private-ip
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    region: europe-west9 # Must match the region of your VPC and Cloud SQL instance
+    purpose: VPC_PEERING
+    addressType: INTERNAL
+    prefixLength: 20 # Recommended prefix length for Cloud SQL
+    networkRef:
+      name: luca-vpc # Reference your main VPC network
+  providerConfigRef:
+    name: gcp-provider
+---
+# 2. Private Service Access Connection
+apiVersion: servicenetworking.gcp.crossplane.io/v1beta1
+kind: Connection
+metadata:
+  name: my-service-networking-connection
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    networkRef:
+      name: luca-vpc # Reference your main VPC network
+    reservedPeeringRanges:
+      - google-managed-services-private-ip # Reference the Address resource above
+    service: servicenetworking.googleapis.com # The service to connect to
+  providerConfigRef:
+    name: gcp-provider
+---
+#    This provisions the PostgreSQL database instance.
+apiVersion: sql.gcp.crossplane.io/v1beta1
+kind: SQLInstance
+metadata:
+  name: luca-pg-cluster
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    databaseVersion: POSTGRES_14 # Specify PostgreSQL version
+    region: europe-west9 # Must match your GKE cluster region
+    settings:
+      tier: db-f1-micro # Smallest tier for testing. Choose appropriate tier for production.
+      backupConfiguration:
+        enabled: true
+        startTime: "03:00"
+      ipConfiguration:
+        ipv4Enabled: false # Disable public IP
+        # Configure private IP access using the private network connection
+        privateNetworkRef:
+          name: luca-vpc # Reference your main VPC network
+      # For production, consider high availability, maintenance window, etc.
+      # availabilityType: REGIONAL # For high availability
+      # diskAutoresize: true
+      # diskSize: 20 # GB
+      # diskType: PD_SSD
+      # maintenanceWindow:
+      #   day: 7 # Sunday
+      #   hour: 3 # 3 AM UTC
+  providerConfigRef:
+    name: gcp-provider
+---
+# 4. Database within the PostgreSQL Instance
+#    This creates a specific database inside your SQL instance.
+apiVersion: sql.gcp.crossplane.io/v1beta1
+kind: Database
+metadata:
+  name: luca-db
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    instanceRef:
+      name: luca-pg-cluster # Reference the SQLInstance created above
+    charset: UTF8
+    collation: en_US.UTF8
+  providerConfigRef:
+    name: gcp-provider
+---
+# 5. User for the Database
+#    This creates a database user with a generated password.
+apiVersion: sql.gcp.crossplane.io/v1beta1
+kind: User
+metadata:
+  name: luca-admin
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    instanceRef:
+      name: luca-pg-cluster # Reference the SQLInstance
+    host: "%" # Allow connections from any host (be careful in production)
+    passwordSecretRef: # Crossplane will generate and store the password in a Secret
+      namespace: crossplane-system # Store the secret in crossplane-system
+      name: luca-sceret # Name of the Kubernetes Secret to create
+      key: password # Key within the secret where the password will be stored
+  providerConfigRef:
+    name: gcp-provider
